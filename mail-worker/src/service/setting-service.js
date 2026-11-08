@@ -1,4 +1,3 @@
-import KvConst from '../const/kv-const';
 import setting from '../entity/setting';
 import orm from '../entity/orm';
 import {verifyRecordType} from '../const/entity-const';
@@ -16,6 +15,15 @@ let settingCacheUntil = 0;
 let settingCachePending = null;
 const SETTING_CACHE_TTL_MS = 5000;
 
+function normalizeSettingRow(value) {
+	const normalized = structuredClone(value);
+	if (typeof normalized.resendTokens === 'string') {
+		normalized.resendTokens = JSON.parse(normalized.resendTokens || '[]');
+	}
+	normalized.r2Domain = '';
+	return normalized;
+}
+
 async function readSettingCache(c) {
 	if (settingCacheValue && settingCacheUntil > Date.now()) {
 		return structuredClone(settingCacheValue);
@@ -24,12 +32,13 @@ async function readSettingCache(c) {
 		settingCachePending = orm(c).select().from(setting).get()
 			.then(value => {
 				if (value) {
-					settingCacheValue = structuredClone(value);
+					const normalized = normalizeSettingRow(value);
+					settingCacheValue = structuredClone(normalized);
 					settingCacheUntil = Date.now() + SETTING_CACHE_TTL_MS;
-				} else {
-					settingCacheValue = null;
-					settingCacheUntil = 0;
+					return normalized;
 				}
+				settingCacheValue = null;
+				settingCacheUntil = 0;
 				return value;
 			})
 			.finally(() => { settingCachePending = null; });
@@ -41,9 +50,7 @@ async function readSettingCache(c) {
 const settingService = {
 
 	async refresh(c) {
-		const settingRow = await orm(c).select().from(setting).get();
-		settingRow.resendTokens = JSON.parse(settingRow.resendTokens);
-		settingRow.r2Domain = '';
+		const settingRow = normalizeSettingRow(await orm(c).select().from(setting).get());
 		c.set('setting', settingRow);
 		// D1 is the source of truth; update the isolate cache without writing a redundant KV copy.
 		settingCacheValue = structuredClone(settingRow);
