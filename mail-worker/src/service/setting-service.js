@@ -11,6 +11,33 @@ import verifyRecordService from './verify-record-service';
 import userContext from '../security/user-context';
 import domainUtils from '../utils/domain-uitls';
 
+let settingCacheValue = null;
+let settingCacheUntil = 0;
+let settingCachePending = null;
+const SETTING_CACHE_TTL_MS = 5000;
+
+async function readSettingCache(c) {
+	if (settingCacheValue && settingCacheUntil > Date.now()) {
+		return structuredClone(settingCacheValue);
+	}
+	if (!settingCachePending) {
+		settingCachePending = c.env.kv.get(KvConst.SETTING, { type: 'json', cacheTtl: 30 })
+			.then(value => {
+				if (value) {
+					settingCacheValue = structuredClone(value);
+					settingCacheUntil = Date.now() + SETTING_CACHE_TTL_MS;
+				} else {
+					settingCacheValue = null;
+					settingCacheUntil = 0;
+				}
+				return value;
+			})
+			.finally(() => { settingCachePending = null; });
+	}
+	const value = await settingCachePending;
+	return value ? structuredClone(value) : value;
+}
+
 const settingService = {
 
 	async refresh(c) {
@@ -19,6 +46,8 @@ const settingService = {
 		settingRow.r2Domain = '';
 		c.set('setting', settingRow);
 		await c.env.kv.put(KvConst.SETTING, JSON.stringify(settingRow));
+		settingCacheValue = structuredClone(settingRow);
+		settingCacheUntil = Date.now() + SETTING_CACHE_TTL_MS;
 	},
 
 	async query(c) {
@@ -27,7 +56,7 @@ const settingService = {
 			return c.get('setting')
 		}
 
-		const setting = await c.env.kv.get(KvConst.SETTING, { type: 'json' });
+		const setting = await readSettingCache(c);
 
 		if (!setting) {
 			throw new BizError('数据库未初始化 Database not initialized.');
