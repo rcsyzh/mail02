@@ -6,6 +6,22 @@ import { emailConst } from '../const/entity-const';
 import kvConst from '../const/kv-const';
 import dayjs from 'dayjs';
 import { toUtc } from '../utils/date-uitil';
+
+const ECHARTS_MEMORY_TTL_MS = 5 * 60 * 1000;
+const ECHARTS_KV_TTL_SECONDS = 4 * 60 * 60;
+const echartsMemoryCache = new Map();
+const echartsPending = new Map();
+
+function rememberEcharts(key, value) {
+	echartsMemoryCache.set(key, {
+		value: structuredClone(value),
+		expiresAt: Date.now() + ECHARTS_MEMORY_TTL_MS
+	});
+	if (echartsMemoryCache.size > 64) {
+		const oldestKey = echartsMemoryCache.keys().next().value;
+		echartsMemoryCache.delete(oldestKey);
+	}
+}
 const analysisService = {
 
 	async echarts(c, params) {
@@ -14,30 +30,32 @@ const analysisService = {
 		}
 
 		const cacheKey = this.echartsCacheKey(params);
-		const cache = await c.env.kv.get(cacheKey, { type: 'json' });
-
-		if (cache) {
-			return cache;
+		const cached = echartsMemoryCache.get(cacheKey);
+		if (cached && cached.expiresAt > Date.now()) {
+			return structuredClone(cached.value);
 		}
 
-		return await this.refreshEchartsCacheByKey(c, cacheKey);
+		let pending = echartsPending.get(cacheKey);
+		if (!pending) {
+			pending = (async () => {
+				const cache = await c.env.kv.get(cacheKey, { type: 'json', cacheTtl: 300 });
+				if (cache) {
+					rememberEcharts(cacheKey, cache);
+					return cache;
+				}
+				return await this.refreshEchartsCacheByKey(c, cacheKey);
+			})().finally(() => echartsPending.delete(cacheKey));
+			echartsPending.set(cacheKey, pending);
+		}
+		return structuredClone(await pending);
 	},
 
 	async refreshEchartsCacheByKey(c, cacheKey) {
 		const params = this.echartsParamsByCacheKey(cacheKey);
 		const data = await this.queryEcharts(c, params);
-		await c.env.kv.put(cacheKey, JSON.stringify(data));
+		await c.env.kv.put(cacheKey, JSON.stringify(data), { expirationTtl: ECHARTS_KV_TTL_SECONDS });
+		rememberEcharts(cacheKey, data);
 		return data;
-	},
-
-	async refreshEchartsCache(c) {
-		if (!this.analysisCacheEnabled(c)) {
-			return;
-		}
-
-		const { keys } = await c.env.kv.list({ prefix: kvConst.ANALYSIS_ECHARTS });
-
-		await Promise.all(keys.map(key => this.refreshEchartsCacheByKey(c, key.name)));
 	},
 
 	async queryEcharts(c, params) {
