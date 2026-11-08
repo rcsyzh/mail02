@@ -17,7 +17,6 @@ import roleService from './role-service';
 import user from '../entity/user';
 import starService from './star-service';
 import dayjs from 'dayjs';
-import kvConst from '../const/kv-const';
 import { t } from '../i18n/i18n'
 import domainUtils from '../utils/domain-uitls';
 import account from "../entity/account";
@@ -623,14 +622,15 @@ const emailService = {
 		emailResult.attList = attList;
 
 		const dateStr = dayjs().format('YYYY-MM-DD');
-		let daySendTotal = await c.env.kv.get(kvConst.SEND_DAY_COUNT + dateStr);
-
-		//记录每天发件次数统计
-		if (!daySendTotal) {
-			await c.env.kv.put(kvConst.SEND_DAY_COUNT + dateStr, JSON.stringify(receiveEmail.length), { expirationTtl: 60 * 60 * 24 });
-		} else  {
-			daySendTotal = Number(daySendTotal) + receiveEmail.length
-			await c.env.kv.put(kvConst.SEND_DAY_COUNT + dateStr, JSON.stringify(daySendTotal), { expirationTtl: 60 * 60 * 24 });
+		// D1 原子累加，避免每封邮件都执行 KV get + put，并避免并发覆盖计数。
+		try {
+			await c.env.db.prepare(`
+				INSERT INTO daily_send_stats (date, total) VALUES (?, ?)
+				ON CONFLICT(date) DO UPDATE SET total = total + excluded.total
+			`).bind(dateStr, receiveEmail.length).run();
+		} catch (error) {
+			// 统计失败不应影响已经成功发送并保存的邮件。
+			console.warn('Daily send counter update failed:', error);
 		}
 
 		return emailResult;
