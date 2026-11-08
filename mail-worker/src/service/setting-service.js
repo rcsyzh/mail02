@@ -21,7 +21,7 @@ async function readSettingCache(c) {
 		return structuredClone(settingCacheValue);
 	}
 	if (!settingCachePending) {
-		settingCachePending = c.env.kv.get(KvConst.SETTING, { type: 'json', cacheTtl: 30 })
+		settingCachePending = orm(c).select().from(setting).get()
 			.then(value => {
 				if (value) {
 					settingCacheValue = structuredClone(value);
@@ -45,7 +45,7 @@ const settingService = {
 		settingRow.resendTokens = JSON.parse(settingRow.resendTokens);
 		settingRow.r2Domain = '';
 		c.set('setting', settingRow);
-		await c.env.kv.put(KvConst.SETTING, JSON.stringify(settingRow));
+		// D1 is the source of truth; update the isolate cache without writing a redundant KV copy.
 		settingCacheValue = structuredClone(settingRow);
 		settingCacheUntil = Date.now() + SETTING_CACHE_TTL_MS;
 	},
