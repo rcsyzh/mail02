@@ -1,6 +1,7 @@
 import settingService from '../service/setting-service';
 import emailUtils from '../utils/email-utils';
 import {emailConst} from "../const/entity-const";
+import kvConst from '../const/kv-const';
 
 const dbInit = {
 	async init(c) {
@@ -33,8 +34,29 @@ const dbInit = {
 		await this.v3_2DB(c);
 		await this.v3_3DB(c);
 		await this.v3_4DB(c);
+		await this.migrateDailySendCount(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async migrateDailySendCount(c) {
+		// Migrate today's legacy KV counter once; future send-count updates live in D1.
+		const date = new Date().toISOString().slice(0, 10);
+		try {
+			const existing = await c.env.db.prepare(
+				'SELECT total FROM daily_send_stats WHERE date = ?'
+			).bind(date).first();
+			if (existing) return;
+			const legacy = await c.env.kv.get(kvConst.SEND_DAY_COUNT + date);
+			if (legacy !== null && legacy !== undefined) {
+				const total = Math.max(0, Number(legacy) || 0);
+				await c.env.db.prepare(
+					'INSERT INTO daily_send_stats (date, total) VALUES (?, ?) ON CONFLICT(date) DO NOTHING'
+				).bind(date, total).run();
+			}
+		} catch (error) {
+			console.warn('Daily send counter migration skipped:', error);
+		}
 	},
 
 	async v3_4DB(c) {
@@ -622,6 +644,13 @@ const dbInit = {
 			text TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
 			is_del INTEGER DEFAULT 0 NOT NULL
+		  )
+		`).run();
+
+		await c.env.db.prepare(`
+		  CREATE TABLE IF NOT EXISTS daily_send_stats (
+			date TEXT PRIMARY KEY,
+			total INTEGER NOT NULL DEFAULT 0
 		  )
 		`).run();
 
