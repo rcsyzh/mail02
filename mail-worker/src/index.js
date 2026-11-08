@@ -5,7 +5,6 @@ import verifyRecordService from './service/verify-record-service';
 import emailService from './service/email-service';
 import r2Service from './service/r2-service';
 import oauthService from './service/oauth-service';
-import analysisService from './service/analysis-service';
 export default {
 	 async fetch(req, env, ctx) {
 
@@ -33,7 +32,7 @@ export default {
 	email: email,
 	async scheduled(c, env, ctx) {
 		if (c.cron === '*/30 * * * *') {
-			await analysisService.refreshEchartsCache({ env })
+			// Analytics cache now refreshes lazily on demand; this legacy trigger does no KV work.
 			return;
 		}
 
@@ -41,7 +40,6 @@ export default {
 		await userService.resetDaySendCount({ env })
 		await emailService.completeReceiveAll({ env })
 		await emailService.autoClean({ env })
-		await analysisService.refreshEchartsCache({ env })
 		await oauthService.clearNoBindOathUser({ env })
 	},
 };
