@@ -1,4 +1,10 @@
 const analysisDao = {
+	async daySendTotal(c) {
+		const row = await c.env.db.prepare(
+			"SELECT COALESCE(total, 0) AS total FROM daily_send_stats WHERE date = date('now')"
+		).first();
+		return Number(row?.total || 0);
+	},
 	async numberCount(c) {
 		const { results } = await c.env.db.prepare(`
             SELECT
