@@ -1,6 +1,7 @@
 name = "${NAME}"
 main = "src/index.js"
 compatibility_date = "2025-06-04"
+workers_dev = false
 
 [observability]
 enabled = true
@@ -23,7 +24,7 @@ binding = "r2"
 bucket_name = "${R2_BUCKET_NAME}"
 
 [[send_email]]
-name = "forward"		#站内转发到已验证的其他邮箱，不限制单个地址
+name = "forward"
 
 [ai]
 binding = "ai"
@@ -35,13 +36,11 @@ not_found_handling = "single-page-application"
 run_worker_first = true
 
 [triggers]
-crons = ["0 * * * *"]	#每小时执行；resetDaySendCount 仅在 UTC 0 点生效
-
+crons = ["0 * * * *"]
 
 [vars]
 ai_model = "${AI_MODEL}"
 analysis_cache = "${ANALYSIS_CACHE}"
-#orm_log = false
 domain = "${DOMAIN}"
 admin = "${ADMIN}"
 jwt_secret = "${JWT_SECRET}"
