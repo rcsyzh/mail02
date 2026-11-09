@@ -90,7 +90,8 @@ jobs:
           fi
           
           if [ -z "$CUSTOM_DOMAIN" ]; then
-            echo "::warning:: CUSTOM_DOMAIN variable is not set."
+            echo "::error::CUSTOM_DOMAIN is required because workers.dev is disabled. Set a custom domain before deploying."
+            exit 1
           fi
           
           CONFIG_FILE="wrangler-action.toml"
